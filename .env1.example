@@ -1,0 +1,2 @@
+PORT=4000
+JWT_SECRET=your-jwt-secret-key-change-in-production
