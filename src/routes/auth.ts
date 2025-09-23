@@ -11,11 +11,15 @@ const otpStore: { [phone: string]: string } = {};
 // Function to send SMS via Africa's Talking
 const sendSMS = async (phone: string, message: string) => {
   try {
+    if (!phone || typeof phone !== 'string') {
+      throw new Error('Invalid phone number provided');
+    }
+
     // Ensure phone number is in international format
-    let formattedPhone = phone;
-    if (!phone.startsWith('+')) {
+    let formattedPhone = phone.trim();
+    if (!formattedPhone.startsWith('+')) {
       // Assume Rwanda (+250) if no country code
-      formattedPhone = `+250${phone}`;
+      formattedPhone = `+250${formattedPhone}`;
     }
 
     console.log(`Sending SMS to: ${formattedPhone}`);
@@ -75,22 +79,17 @@ router.post('/register', async (req: Request, res: Response) => {
       otpStore[phone] = otp;
 
       try {
-        // Send OTP via Africa's Talking SMS
-        await sendSMS(phone, `Your BulkSMS Pro verification code is: ${otp}`);
+        // Send OTP via Africa's Talking SMS (with SMS Retriever format)
+        await sendSMS(phone, `<#> Your BulkSMS Pro verification code is: ${otp}\n\nThis code will expire in 10 minutes.`);
 
         res.json({
           userExists: false,
-          message: 'OTP sent to your phone',
-          // Keep OTP in response for development/demo purposes
-          otp: otp
+          message: 'OTP sent to your phone'
         });
       } catch (smsError) {
         console.error('Failed to send SMS:', smsError);
-        // Still return success but log the error
-        res.json({
-          userExists: false,
-          message: 'OTP generated (SMS failed - check credentials)',
-          otp: otp
+        res.status(500).json({
+          error: 'Failed to send SMS. Please try again.'
         });
       }
     }
