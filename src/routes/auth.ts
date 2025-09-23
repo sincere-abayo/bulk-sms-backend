@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { generateToken, generateOTP } from '../utils/auth';
 import { UserModel } from '../models/User';
+import { ContactModel } from '../models/Contact';
+import { ContactGroupModel } from '../models/ContactGroup';
+import { authenticateUser, AuthenticatedRequest } from '../middleware/auth';
 import axios from 'axios';
 
 const router = Router();
@@ -156,6 +159,187 @@ router.post('/test-sms', async (req: Request, res: Response) => {
     res.json({ success: true, result });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Contact Management Routes
+router.get('/contacts', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const contacts = await ContactModel.findByUserId(userId);
+    res.json({ contacts });
+  } catch (error) {
+    console.error('Error fetching contacts:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/contacts', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name, phone, source } = req.body;
+    if (!name || !phone) {
+      return res.status(400).json({ error: 'Name and phone are required' });
+    }
+
+    const userId = req.userId!;
+    const contact = await ContactModel.create({
+      userId,
+      name,
+      phone,
+      source: source || 'manual',
+      hashPhone: ContactModel.hashPhone(phone),
+    });
+
+    res.status(201).json({ contact });
+  } catch (error) {
+    console.error('Error creating contact:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.put('/contacts/:id', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, phone } = req.body;
+    const userId = req.userId!;
+
+    // First check if the contact belongs to the user
+    const existingContact = await ContactModel.findById(id);
+    if (!existingContact || existingContact.userId !== userId) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    const contact = await ContactModel.update(id, { name, phone });
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    res.json({ contact });
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/contacts/:id', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+
+    // First check if the contact belongs to the user
+    const existingContact = await ContactModel.findById(id);
+    if (!existingContact || existingContact.userId !== userId) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    const deleted = await ContactModel.delete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    res.json({ message: 'Contact deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting contact:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/contacts/bulk', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { contacts } = req.body;
+    if (!Array.isArray(contacts)) {
+      return res.status(400).json({ error: 'Contacts must be an array' });
+    }
+
+    const userId = req.userId!;
+    const newContacts = await ContactModel.bulkCreate(userId, contacts);
+
+    res.status(201).json({ contacts: newContacts });
+  } catch (error) {
+    console.error('Error bulk creating contacts:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Contact Groups Routes
+router.get('/contact-groups', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const groups = await ContactGroupModel.findByUserId(userId);
+    res.json({ groups });
+  } catch (error) {
+    console.error('Error fetching contact groups:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/contact-groups', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name } = req.body;
+    if (!name) {
+      return res.status(400).json({ error: 'Group name is required' });
+    }
+
+    const userId = req.userId!;
+    const group = await ContactGroupModel.create({ userId, name });
+    res.status(201).json({ group });
+  } catch (error) {
+    console.error('Error creating contact group:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/contact-groups/:groupId/contacts/:contactId', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { groupId, contactId } = req.params;
+    const userId = req.userId!;
+
+    // Verify the contact belongs to the user
+    const contact = await ContactModel.findById(contactId);
+    if (!contact || contact.userId !== userId) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    // Verify the group belongs to the user
+    const group = await ContactGroupModel.findById(groupId);
+    if (!group || group.userId !== userId) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    const member = await ContactGroupModel.addContactToGroup(groupId, contactId);
+    res.status(201).json({ member });
+  } catch (error) {
+    console.error('Error adding contact to group:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/contact-groups/:groupId/contacts/:contactId', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { groupId, contactId } = req.params;
+    const userId = req.userId!;
+
+    // Verify the contact belongs to the user
+    const contact = await ContactModel.findById(contactId);
+    if (!contact || contact.userId !== userId) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+
+    // Verify the group belongs to the user
+    const group = await ContactGroupModel.findById(groupId);
+    if (!group || group.userId !== userId) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+
+    const removed = await ContactGroupModel.removeContactFromGroup(groupId, contactId);
+    if (!removed) {
+      return res.status(404).json({ error: 'Contact not found in group' });
+    }
+
+    res.json({ message: 'Contact removed from group successfully' });
+  } catch (error) {
+    console.error('Error removing contact from group:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
