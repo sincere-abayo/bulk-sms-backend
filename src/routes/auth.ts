@@ -162,6 +162,58 @@ router.post('/test-sms', async (req: Request, res: Response) => {
   }
 });
 
+// Send bulk SMS messages
+router.post('/send-sms', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { message, recipients } = req.body;
+
+    if (!message || !recipients || !Array.isArray(recipients)) {
+      return res.status(400).json({ error: 'Message and recipients array are required' });
+    }
+
+    if (recipients.length === 0) {
+      return res.status(400).json({ error: 'At least one recipient is required' });
+    }
+
+    const userId = req.userId!;
+    const results = [];
+    const errors = [];
+
+    // Send SMS to each recipient
+    for (const recipient of recipients) {
+      try {
+        const result = await sendSMS(recipient.phone, message);
+        results.push({
+          phone: recipient.phone,
+          name: recipient.name,
+          status: 'sent',
+          result
+        });
+      } catch (error: any) {
+        console.error(`Failed to send SMS to ${recipient.phone}:`, error);
+        errors.push({
+          phone: recipient.phone,
+          name: recipient.name,
+          status: 'failed',
+          error: error.message
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      totalRecipients: recipients.length,
+      sent: results.length,
+      failed: errors.length,
+      results,
+      errors
+    });
+  } catch (error: any) {
+    console.error('Error in send-sms:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Contact Management Routes
 router.get('/contacts', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
