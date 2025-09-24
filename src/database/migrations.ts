@@ -32,11 +32,31 @@ export const createTables = async () => {
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
         content TEXT NOT NULL,
-        recipients TEXT[] NOT NULL,
+        sms_count INTEGER DEFAULT 1,
+        total_recipients INTEGER DEFAULT 0,
+        sent_count INTEGER DEFAULT 0,
+        failed_count INTEGER DEFAULT 0,
         status VARCHAR(20) DEFAULT 'pending',
         cost DECIMAL(10,2),
+        payment_id VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create message_recipients table for detailed tracking
+    await query(`
+      CREATE TABLE IF NOT EXISTS message_recipients (
+        id VARCHAR(255) PRIMARY KEY,
+        message_id VARCHAR(255) REFERENCES messages(id) ON DELETE CASCADE,
+        contact_id VARCHAR(255) REFERENCES contacts(id) ON DELETE SET NULL,
+        name VARCHAR(100),
+        phone VARCHAR(20) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        delivered_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -61,8 +81,71 @@ export const createTables = async () => {
   }
 };
 
+export const runMigrations = async () => {
+  try {
+    console.log('Running database migrations...');
+
+    // Add new columns to existing messages table
+    try {
+      await query(`
+        ALTER TABLE messages
+        ADD COLUMN IF NOT EXISTS sms_count INTEGER DEFAULT 1,
+        ADD COLUMN IF NOT EXISTS total_recipients INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS sent_count INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS failed_count INTEGER DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS payment_id VARCHAR(255)
+      `);
+
+      // Drop the old recipients column if it exists
+      try {
+        await query(`ALTER TABLE messages DROP COLUMN IF EXISTS recipients`);
+        console.log('Dropped old recipients column');
+      } catch (dropError) {
+        console.log('Old recipients column may not exist or already dropped');
+      }
+
+      console.log('Messages table migrated successfully');
+    } catch (error) {
+      console.log('Messages table already migrated or migration failed:', error);
+    }
+
+    // Create message_recipients table if it doesn't exist
+    await query(`
+      CREATE TABLE IF NOT EXISTS message_recipients (
+        id VARCHAR(255) PRIMARY KEY,
+        message_id VARCHAR(255) REFERENCES messages(id) ON DELETE CASCADE,
+        contact_id VARCHAR(255) REFERENCES contacts(id) ON DELETE SET NULL,
+        name VARCHAR(100),
+        phone VARCHAR(20) NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        error_message TEXT,
+        sent_at TIMESTAMP,
+        delivered_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Add updated_at column if it doesn't exist
+    try {
+      await query(`ALTER TABLE message_recipients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+      console.log('Added updated_at column to message_recipients');
+    } catch (error) {
+      console.log('updated_at column may already exist');
+    }
+
+    console.log('Message recipients table created');
+
+    console.log('Database migrations completed successfully');
+  } catch (error) {
+    console.error('Error running migrations:', error);
+    throw error;
+  }
+};
+
 export const dropTables = async () => {
   try {
+    await query('DROP TABLE IF EXISTS message_recipients CASCADE');
     await query('DROP TABLE IF EXISTS payments CASCADE');
     await query('DROP TABLE IF EXISTS messages CASCADE');
     await query('DROP TABLE IF EXISTS contacts CASCADE');

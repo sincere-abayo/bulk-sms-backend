@@ -3,6 +3,7 @@ import { generateToken, generateOTP } from '../utils/auth';
 import { UserModel } from '../models/User';
 import { ContactModel } from '../models/Contact';
 import { ContactGroupModel } from '../models/ContactGroup';
+import { MessageModel, MessageRecipientModel } from '../models/Message';
 import { authenticateUser, AuthenticatedRequest } from '../middleware/auth';
 import axios from 'axios';
 
@@ -176,13 +177,55 @@ router.post('/send-sms', authenticateUser, async (req: AuthenticatedRequest, res
     }
 
     const userId = req.userId!;
+    const smsCount = Math.ceil(message.length / 160) || 1;
+    const costPerSMS = 15; // RWF
+    const totalCost = recipients.length * smsCount * costPerSMS;
+
+    // Create message record
+    const messageRecord = await MessageModel.create({
+      userId,
+      content: message,
+      smsCount,
+      totalRecipients: recipients.length,
+      sentCount: 0,
+      failedCount: 0,
+      status: 'sending',
+      cost: totalCost
+    });
+
     const results = [];
     const errors = [];
+    let sentCount = 0;
+    let failedCount = 0;
+
+    // Create recipient records
+    const recipientInputs = recipients.map(recipient => ({
+      messageId: messageRecord.id,
+      contactId: recipient.contactId,
+      name: recipient.name,
+      phone: recipient.phone,
+      status: 'pending' as const
+    }));
+
+    const recipientRecords = await MessageRecipientModel.createBulk(recipientInputs);
 
     // Send SMS to each recipient
-    for (const recipient of recipients) {
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
+      const recipientRecord = recipientRecords[i];
+
       try {
         const result = await sendSMS(recipient.phone, message);
+        sentCount++;
+
+        // Update recipient status
+        await MessageRecipientModel.updateStatus(
+          recipientRecord.id,
+          'sent',
+          undefined,
+          new Date()
+        );
+
         results.push({
           phone: recipient.phone,
           name: recipient.name,
@@ -191,6 +234,15 @@ router.post('/send-sms', authenticateUser, async (req: AuthenticatedRequest, res
         });
       } catch (error: any) {
         console.error(`Failed to send SMS to ${recipient.phone}:`, error);
+        failedCount++;
+
+        // Update recipient status with error
+        await MessageRecipientModel.updateStatus(
+          recipientRecord.id,
+          'failed',
+          error.message
+        );
+
         errors.push({
           phone: recipient.phone,
           name: recipient.name,
@@ -200,11 +252,18 @@ router.post('/send-sms', authenticateUser, async (req: AuthenticatedRequest, res
       }
     }
 
+    // Update message status
+    const finalStatus = failedCount === 0 ? 'completed' :
+                       sentCount === 0 ? 'failed' : 'partial';
+    await MessageModel.updateStatus(messageRecord.id, finalStatus, sentCount, failedCount);
+
     res.json({
       success: true,
+      messageId: messageRecord.id,
       totalRecipients: recipients.length,
-      sent: results.length,
-      failed: errors.length,
+      sent: sentCount,
+      failed: failedCount,
+      cost: totalCost,
       results,
       errors
     });
@@ -391,6 +450,52 @@ router.delete('/contact-groups/:groupId/contacts/:contactId', authenticateUser, 
     res.json({ message: 'Contact removed from group successfully' });
   } catch (error) {
     console.error('Error removing contact from group:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Message History Routes
+router.get('/messages', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    const messages = await MessageModel.findByUserId(userId, limit, offset);
+
+    res.json({
+      messages,
+      pagination: {
+        page,
+        limit,
+        offset
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/messages/:id', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.userId!;
+
+    const message = await MessageModel.findById(id);
+    if (!message || message.userId !== userId) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const recipients = await MessageRecipientModel.findByMessageId(id);
+
+    res.json({
+      message,
+      recipients
+    });
+  } catch (error) {
+    console.error('Error fetching message details:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

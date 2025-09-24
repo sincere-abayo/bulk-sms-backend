@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import authRoutes from './routes/auth';
-import { createTables } from './database/migrations';
+import { createTables, runMigrations } from './database/migrations';
 
 dotenv.config();
 
@@ -24,6 +24,7 @@ app.use('/api/auth', authRoutes);
 const startServer = async () => {
   try {
     await createTables();
+    await runMigrations();
     app.listen(port, () => {
       console.log(`Server running on port ${port}`);
     });
