@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { generateToken, generateOTP } from '../utils/auth';
 import { UserModel } from '../models/User';
 import { ContactModel } from '../models/Contact';
 import { ContactGroupModel } from '../models/ContactGroup';
 import { MessageModel, MessageRecipientModel } from '../models/Message';
 import { authenticateUser, AuthenticatedRequest } from '../middleware/auth';
+import { query } from '../database/connection';
 import axios from 'axios';
 
 const router = Router();
@@ -559,6 +561,267 @@ router.get('/messages/:id', authenticateUser, async (req: AuthenticatedRequest, 
     });
   } catch (error) {
     console.error('Error fetching message details:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin Authentication Middleware
+const authenticateAdmin = (req: any, res: any, next: any) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
+    if (decoded.role !== 'admin' && decoded.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    req.adminId = decoded.id;
+    req.adminRole = decoded.role;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// Admin Routes
+router.post('/admin/login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // For demo purposes, use hardcoded admin credentials
+    // In production, this should be stored securely in database
+    if (email === 'admin@bulksms.com' && password === 'admin123') {
+      const token = jwt.sign(
+        { id: 'admin-1', email, role: 'super_admin' },
+        process.env.JWT_SECRET || 'your-secret-key',
+        { expiresIn: '24h' }
+      );
+
+      res.json({
+        token,
+        user: {
+          id: 'admin-1',
+          email: 'admin@bulksms.com',
+          name: 'Super Admin',
+          role: 'super_admin'
+        }
+      });
+    } else {
+      res.status(401).json({ error: 'Invalid credentials' });
+    }
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/admin/auth/verify', authenticateAdmin, (req: any, res: Response) => {
+  res.json({
+    user: {
+      id: req.adminId,
+      email: 'admin@bulksms.com',
+      name: 'Super Admin',
+      role: req.adminRole
+    }
+  });
+});
+
+// Admin Dashboard Statistics
+router.get('/admin/dashboard-stats', authenticateAdmin, async (req: any, res: Response) => {
+  try {
+    // Get all users
+    const usersResult = await query('SELECT COUNT(*) as count FROM users');
+    const totalUsers = parseInt(usersResult.rows[0].count);
+
+    // Get all messages
+    const messagesResult = await query('SELECT COUNT(*) as count FROM messages');
+    const totalMessages = parseInt(messagesResult.rows[0].count);
+
+    // Get total revenue
+    const revenueResult = await query('SELECT COALESCE(SUM(cost), 0) as total FROM messages');
+    const totalRevenue = parseFloat(revenueResult.rows[0].total);
+
+    // Get active users (users who sent messages in last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const activeUsersResult = await query(`
+      SELECT COUNT(DISTINCT user_id) as count
+      FROM messages
+      WHERE created_at >= $1
+    `, [thirtyDaysAgo]);
+    const activeUsers = parseInt(activeUsersResult.rows[0].count);
+
+    // Get pending messages
+    const pendingResult = await query(`
+      SELECT COUNT(*) as count FROM message_recipients
+      WHERE status = 'pending'
+    `);
+    const pendingMessages = parseInt(pendingResult.rows[0].count);
+
+    // Get system alerts (simulated)
+    const systemAlerts = Math.floor(Math.random() * 5); // Random alerts for demo
+
+    // Calculate growth rate (compare this month vs last month)
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const thisMonthResult = await query(`
+      SELECT COUNT(*) as count FROM messages
+      WHERE created_at >= $1
+    `, [startOfThisMonth]);
+    const thisMonthMessages = parseInt(thisMonthResult.rows[0].count);
+
+    const lastMonthResult = await query(`
+      SELECT COUNT(*) as count FROM messages
+      WHERE created_at >= $1 AND created_at < $2
+    `, [startOfLastMonth, startOfThisMonth]);
+    const lastMonthMessages = parseInt(lastMonthResult.rows[0].count);
+
+    const growthRate = lastMonthMessages > 0 ?
+      ((thisMonthMessages - lastMonthMessages) / lastMonthMessages) * 100 : 0;
+
+    res.json({
+      totalUsers,
+      totalMessages,
+      totalRevenue,
+      activeUsers,
+      pendingMessages,
+      systemAlerts,
+      growthRate: Math.round(growthRate * 10) / 10,
+      monthlyRevenue: totalRevenue * 0.3, // Estimate monthly revenue
+      currency: 'RWF'
+    });
+  } catch (error) {
+    console.error('Error fetching admin dashboard stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin User Management
+router.get('/admin/users', authenticateAdmin, async (req: any, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    const usersResult = await query(`
+      SELECT id, phone, name, email, created_at
+      FROM users
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const totalResult = await query('SELECT COUNT(*) as count FROM users');
+    const totalUsers = parseInt(totalResult.rows[0].count);
+
+    res.json({
+      users: usersResult.rows,
+      pagination: {
+        page,
+        limit,
+        total: totalUsers,
+        pages: Math.ceil(totalUsers / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin users:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin Message Analytics
+router.get('/admin/messages', authenticateAdmin, async (req: any, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+
+    const messagesResult = await query(`
+      SELECT
+        m.id,
+        m.content,
+        m.status,
+        m.cost,
+        m.sent_count,
+        m.failed_count,
+        m.created_at,
+        u.name as user_name,
+        u.phone as user_phone
+      FROM messages m
+      LEFT JOIN users u ON m.user_id = u.id
+      ORDER BY m.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const totalResult = await query('SELECT COUNT(*) as count FROM messages');
+    const totalMessages = parseInt(totalResult.rows[0].count);
+
+    res.json({
+      messages: messagesResult.rows,
+      pagination: {
+        page,
+        limit,
+        total: totalMessages,
+        pages: Math.ceil(totalMessages / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin messages:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin Revenue Analytics
+router.get('/admin/revenue', authenticateAdmin, async (req: any, res: Response) => {
+  try {
+    // Get revenue by month for the last 12 months
+    const revenueResult = await query(`
+      SELECT
+        DATE_TRUNC('month', created_at) as month,
+        COUNT(*) as message_count,
+        SUM(cost) as revenue,
+        SUM(sent_count) as total_sent,
+        SUM(failed_count) as total_failed
+      FROM messages
+      WHERE created_at >= NOW() - INTERVAL '12 months'
+      GROUP BY DATE_TRUNC('month', created_at)
+      ORDER BY month DESC
+    `);
+
+    // Get total revenue stats
+    const totalStatsResult = await query(`
+      SELECT
+        COUNT(*) as total_messages,
+        COALESCE(SUM(cost), 0) as total_revenue,
+        COALESCE(SUM(sent_count), 0) as total_sent,
+        COALESCE(SUM(failed_count), 0) as total_failed,
+        COUNT(DISTINCT user_id) as unique_users
+      FROM messages
+    `);
+
+    const totalStats = totalStatsResult.rows[0];
+
+    res.json({
+      monthlyRevenue: revenueResult.rows,
+      totalStats: {
+        totalMessages: parseInt(totalStats.total_messages),
+        totalRevenue: parseFloat(totalStats.total_revenue),
+        totalSent: parseInt(totalStats.total_sent),
+        totalFailed: parseInt(totalStats.total_failed),
+        uniqueUsers: parseInt(totalStats.unique_users),
+        averageRevenuePerUser: totalStats.unique_users > 0 ?
+          parseFloat(totalStats.total_revenue) / parseInt(totalStats.unique_users) : 0
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin revenue:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
