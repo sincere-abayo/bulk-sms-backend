@@ -454,6 +454,69 @@ router.delete('/contact-groups/:groupId/contacts/:contactId', authenticateUser, 
   }
 });
 
+// Statistics Routes
+router.get('/statistics', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+
+    // Get all messages for the user
+    const allMessages = await MessageModel.findByUserId(userId, 1000, 0); // Get up to 1000 messages
+
+    // Calculate statistics
+    const totalSent = allMessages.reduce((sum, msg) => sum + msg.sentCount, 0);
+    const totalRecipients = allMessages.reduce((sum, msg) => sum + msg.totalRecipients, 0);
+    const totalFailed = allMessages.reduce((sum, msg) => sum + msg.failedCount, 0);
+    const totalCost = allMessages.reduce((sum, msg) => sum + msg.cost, 0);
+
+    // Calculate delivery rate
+    const deliveryRate = totalRecipients > 0 ? ((totalSent / totalRecipients) * 100) : 0;
+
+    // Get contact count
+    const contacts = await ContactModel.findByUserId(userId);
+    const totalContacts = contacts.length;
+
+    // Calculate this month's statistics
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const thisMonthMessages = allMessages.filter(msg =>
+      new Date(msg.createdAt) >= startOfMonth
+    );
+
+    const thisMonthSent = thisMonthMessages.reduce((sum, msg) => sum + msg.sentCount, 0);
+    const lastMonthSent = totalSent - thisMonthSent;
+
+    // Calculate growth percentage
+    const sentGrowth = lastMonthSent > 0 ? ((thisMonthSent - lastMonthSent) / lastMonthSent) * 100 : 0;
+
+    // Calculate balance (this would come from payments table in a real app)
+    // For now, we'll simulate a balance based on usage
+    const estimatedBalance = Math.max(0, 10000 - totalCost); // Start with RWF 10,000
+
+    res.json({
+      totalSent,
+      deliveryRate: Math.round(deliveryRate * 10) / 10, // Round to 1 decimal
+      totalContacts,
+      totalCost,
+      sentGrowth: Math.round(sentGrowth * 10) / 10,
+      balance: estimatedBalance,
+      currency: 'RWF',
+      usdEquivalent: Math.round((estimatedBalance / 1300) * 100) / 100, // Rough RWF to USD conversion
+      thisMonth: {
+        sent: thisMonthSent,
+        cost: thisMonthMessages.reduce((sum, msg) => sum + msg.cost, 0)
+      },
+      allTime: {
+        messages: allMessages.length,
+        recipients: totalRecipients,
+        failed: totalFailed
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Message History Routes
 router.get('/messages', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   try {
