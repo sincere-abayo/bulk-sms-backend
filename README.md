@@ -45,3 +45,5 @@ npm run dev
 ## SMS Integration
 
 The app uses Africa's Talking for SMS delivery. OTP codes are sent via SMS to user phones. In development, OTPs are also logged to console for testing.
+
+%iT6gMZX&5/R?&$

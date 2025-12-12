@@ -1,9 +1,11 @@
-import { query } from './connection';
-
-export const createTables = async () => {
-  try {
-    // Create users table
-    await query(`
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.dropTables = exports.runMigrations = exports.createTables = void 0;
+const connection_1 = require("./connection");
+const createTables = async () => {
+    try {
+        // Create users table
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(255) PRIMARY KEY,
         phone VARCHAR(20) UNIQUE NOT NULL,
@@ -13,9 +15,8 @@ export const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    // Create contacts table
-    await query(`
+        // Create contacts table
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS contacts (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
@@ -25,9 +26,8 @@ export const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    // Create messages table
-    await query(`
+        // Create messages table
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS messages (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
@@ -43,9 +43,8 @@ export const createTables = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    // Create message_recipients table for detailed tracking
-    await query(`
+        // Create message_recipients table for detailed tracking
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS message_recipients (
         id VARCHAR(255) PRIMARY KEY,
         message_id VARCHAR(255) REFERENCES messages(id) ON DELETE CASCADE,
@@ -59,9 +58,8 @@ export const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    // Create payments table
-    await query(`
+        // Create payments table
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS payments (
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
@@ -73,21 +71,20 @@ export const createTables = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    console.log('Database tables created successfully');
-  } catch (error) {
-    console.error('Error creating tables:', error);
-    throw error;
-  }
+        console.log('Database tables created successfully');
+    }
+    catch (error) {
+        console.error('Error creating tables:', error);
+        throw error;
+    }
 };
-
-export const runMigrations = async () => {
-  try {
-    console.log('Running database migrations...');
-
-    // Add new columns to existing messages table
+exports.createTables = createTables;
+const runMigrations = async () => {
     try {
-      await query(`
+        console.log('Running database migrations...');
+        // Add new columns to existing messages table
+        try {
+            await (0, connection_1.query)(`
         ALTER TABLE messages
         ADD COLUMN IF NOT EXISTS sms_count INTEGER DEFAULT 1,
         ADD COLUMN IF NOT EXISTS total_recipients INTEGER DEFAULT 0,
@@ -95,22 +92,21 @@ export const runMigrations = async () => {
         ADD COLUMN IF NOT EXISTS failed_count INTEGER DEFAULT 0,
         ADD COLUMN IF NOT EXISTS payment_id VARCHAR(255)
       `);
-
-      // Drop the old recipients column if it exists
-      try {
-        await query(`ALTER TABLE messages DROP COLUMN IF EXISTS recipients`);
-        console.log('Dropped old recipients column');
-      } catch (dropError) {
-        console.log('Old recipients column may not exist or already dropped');
-      }
-
-      console.log('Messages table migrated successfully');
-    } catch (error) {
-      console.log('Messages table already migrated or migration failed:', error);
-    }
-
-    // Create message_recipients table if it doesn't exist
-    await query(`
+            // Drop the old recipients column if it exists
+            try {
+                await (0, connection_1.query)(`ALTER TABLE messages DROP COLUMN IF EXISTS recipients`);
+                console.log('Dropped old recipients column');
+            }
+            catch (dropError) {
+                console.log('Old recipients column may not exist or already dropped');
+            }
+            console.log('Messages table migrated successfully');
+        }
+        catch (error) {
+            console.log('Messages table already migrated or migration failed:', error);
+        }
+        // Create message_recipients table if it doesn't exist
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS message_recipients (
         id VARCHAR(255) PRIMARY KEY,
         message_id VARCHAR(255) REFERENCES messages(id) ON DELETE CASCADE,
@@ -125,19 +121,17 @@ export const runMigrations = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    // Add updated_at column if it doesn't exist
-    try {
-      await query(`ALTER TABLE message_recipients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
-      console.log('Added updated_at column to message_recipients');
-    } catch (error) {
-      console.log('updated_at column may already exist');
-    }
-
-    console.log('Message recipients table created');
-
-    // Create app_settings table
-    await query(`
+        // Add updated_at column if it doesn't exist
+        try {
+            await (0, connection_1.query)(`ALTER TABLE message_recipients ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`);
+            console.log('Added updated_at column to message_recipients');
+        }
+        catch (error) {
+            console.log('updated_at column may already exist');
+        }
+        console.log('Message recipients table created');
+        // Create app_settings table
+        await (0, connection_1.query)(`
       CREATE TABLE IF NOT EXISTS app_settings (
         id SERIAL PRIMARY KEY,
         android_url VARCHAR(500) NOT NULL DEFAULT 'https://play.google.com/store/apps/details?id=com.bulksmspro.app',
@@ -148,27 +142,28 @@ export const runMigrations = async () => {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-
-    console.log('App settings table created');
-
-    console.log('Database migrations completed successfully');
-  } catch (error) {
-    console.error('Error running migrations:', error);
-    throw error;
-  }
+        console.log('App settings table created');
+        console.log('Database migrations completed successfully');
+    }
+    catch (error) {
+        console.error('Error running migrations:', error);
+        throw error;
+    }
 };
-
-export const dropTables = async () => {
-  try {
-    await query('DROP TABLE IF EXISTS app_settings CASCADE');
-    await query('DROP TABLE IF EXISTS message_recipients CASCADE');
-    await query('DROP TABLE IF EXISTS payments CASCADE');
-    await query('DROP TABLE IF EXISTS messages CASCADE');
-    await query('DROP TABLE IF EXISTS contacts CASCADE');
-    await query('DROP TABLE IF EXISTS users CASCADE');
-    console.log('Database tables dropped successfully');
-  } catch (error) {
-    console.error('Error dropping tables:', error);
-    throw error;
-  }
+exports.runMigrations = runMigrations;
+const dropTables = async () => {
+    try {
+        await (0, connection_1.query)('DROP TABLE IF EXISTS app_settings CASCADE');
+        await (0, connection_1.query)('DROP TABLE IF EXISTS message_recipients CASCADE');
+        await (0, connection_1.query)('DROP TABLE IF EXISTS payments CASCADE');
+        await (0, connection_1.query)('DROP TABLE IF EXISTS messages CASCADE');
+        await (0, connection_1.query)('DROP TABLE IF EXISTS contacts CASCADE');
+        await (0, connection_1.query)('DROP TABLE IF EXISTS users CASCADE');
+        console.log('Database tables dropped successfully');
+    }
+    catch (error) {
+        console.error('Error dropping tables:', error);
+        throw error;
+    }
 };
+exports.dropTables = dropTables;

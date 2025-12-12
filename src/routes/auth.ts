@@ -5,6 +5,7 @@ import { UserModel } from '../models/User';
 import { ContactModel } from '../models/Contact';
 import { ContactGroupModel } from '../models/ContactGroup';
 import { MessageModel, MessageRecipientModel } from '../models/Message';
+import { AppSettingsModel } from '../models/AppSettings';
 import { authenticateUser, AuthenticatedRequest } from '../middleware/auth';
 import { query } from '../database/connection';
 import axios from 'axios';
@@ -832,6 +833,88 @@ router.get('/admin/messages', authenticateAdmin, async (req: any, res: Response)
     });
   } catch (error) {
     console.error('Error fetching admin messages:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin App Settings - Get
+router.get('/admin/app-settings', async (req: Request, res: Response) => {
+  try {
+    const settings = await AppSettingsModel.getSettings();
+    
+    if (!settings) {
+      return res.status(500).json({ error: 'Failed to fetch app settings' });
+    }
+
+    const appSettings = {
+      appDownloads: {
+        androidUrl: settings.android_url,
+        iosUrl: settings.ios_url,
+        enableAndroid: settings.enable_android,
+        enableIos: settings.enable_ios
+      }
+    };
+
+    res.json(appSettings);
+  } catch (error) {
+    console.error('Error fetching app settings:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin App Settings - Save
+router.put('/admin/app-settings', authenticateAdmin, async (req: any, res: Response) => {
+  try {
+    const { appDownloads } = req.body;
+
+    if (!appDownloads) {
+      return res.status(400).json({ error: 'App downloads settings are required' });
+    }
+
+    const { androidUrl, iosUrl, enableAndroid, enableIos } = appDownloads;
+
+    // Validate URLs
+    if (enableAndroid && (!androidUrl || !androidUrl.trim())) {
+      return res.status(400).json({ error: 'Android URL is required when Android downloads are enabled' });
+    }
+
+    if (enableIos && (!iosUrl || !iosUrl.trim())) {
+      return res.status(400).json({ error: 'iOS URL is required when iOS downloads are enabled' });
+    }
+
+    // Validate URL format
+    const urlPattern = /^https?:\/\/.+/;
+    if (enableAndroid && !urlPattern.test(androidUrl)) {
+      return res.status(400).json({ error: 'Android URL must be a valid HTTP/HTTPS URL' });
+    }
+
+    if (enableIos && !urlPattern.test(iosUrl)) {
+      return res.status(400).json({ error: 'iOS URL must be a valid HTTP/HTTPS URL' });
+    }
+
+    const updatedSettings = await AppSettingsModel.updateSettings({
+      android_url: androidUrl || '',
+      ios_url: iosUrl || '',
+      enable_android: Boolean(enableAndroid),
+      enable_ios: Boolean(enableIos)
+    });
+
+    if (!updatedSettings) {
+      return res.status(500).json({ error: 'Failed to save app settings' });
+    }
+
+    const response = {
+      appDownloads: {
+        androidUrl: updatedSettings.android_url,
+        iosUrl: updatedSettings.ios_url,
+        enableAndroid: updatedSettings.enable_android,
+        enableIos: updatedSettings.enable_ios
+      }
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error saving app settings:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
