@@ -46,10 +46,52 @@ const sendSMS = async (phone: string, message: string) => {
       }
     );
 
-    console.log('SMS sent successfully:', response.data);
-    return response.data;
+    console.log('SMS API Response:', JSON.stringify(response.data, null, 2));
+
+    // Check if the response contains SMS data
+    if (response.data && response.data.SMSMessageData) {
+      const smsData = response.data.SMSMessageData;
+      
+      // Check if there are recipients in the response
+      if (smsData.Recipients && smsData.Recipients.length > 0) {
+        const recipient = smsData.Recipients[0];
+        
+        // Check the status of the first (and only) recipient
+        if (recipient.status && recipient.status.toLowerCase() === 'success') {
+          console.log(`SMS sent successfully to ${formattedPhone}`);
+          return {
+            success: true,
+            status: 'sent',
+            recipient: recipient,
+            messageId: recipient.messageId,
+            cost: recipient.cost
+          };
+        } else {
+          // SMS was rejected or failed
+          const errorMessage = recipient.status || 'Unknown error';
+          console.error(`SMS rejected for ${formattedPhone}: ${errorMessage}`);
+          throw new Error(`SMS rejected: ${errorMessage}`);
+        }
+      } else {
+        throw new Error('No recipients in response');
+      }
+    } else {
+      throw new Error('Invalid response format from Africa\'s Talking');
+    }
   } catch (error: any) {
     console.error('SMS sending failed:', error.response?.data || error.message);
+    
+    // If it's an axios error, check the response data
+    if (error.response && error.response.data) {
+      const errorData = error.response.data;
+      if (errorData.SMSMessageData && errorData.SMSMessageData.Recipients) {
+        const recipient = errorData.SMSMessageData.Recipients[0];
+        if (recipient && recipient.status) {
+          throw new Error(`SMS failed: ${recipient.status}`);
+        }
+      }
+    }
+    
     throw error;
   }
 };
@@ -218,38 +260,54 @@ router.post('/send-sms', authenticateUser, async (req: AuthenticatedRequest, res
 
       try {
         const result = await sendSMS(recipient.phone, message);
-        sentCount++;
+        
+        // Check if the SMS was actually sent successfully
+        if (result.success && result.status === 'sent') {
+          sentCount++;
 
-        // Update recipient status
-        await MessageRecipientModel.updateStatus(
-          recipientRecord.id,
-          'sent',
-          undefined,
-          new Date()
-        );
+          // Update recipient status
+          await MessageRecipientModel.updateStatus(
+            recipientRecord.id,
+            'sent',
+            undefined,
+            new Date()
+          );
 
-        results.push({
-          phone: recipient.phone,
-          name: recipient.name,
-          status: 'sent',
-          result
-        });
+          results.push({
+            phone: recipient.phone,
+            name: recipient.name,
+            status: 'sent',
+            messageId: result.messageId,
+            cost: result.cost,
+            result
+          });
+        } else {
+          // SMS was not sent successfully
+          throw new Error('SMS sending failed - invalid status');
+        }
       } catch (error: any) {
         console.error(`Failed to send SMS to ${recipient.phone}:`, error);
         failedCount++;
+
+        // Extract meaningful error message
+        let errorMessage = error.message;
+        if (errorMessage.includes('SMS rejected:') || errorMessage.includes('SMS failed:')) {
+          // Keep the Africa's Talking error message
+          errorMessage = errorMessage.replace('SMS rejected: ', '').replace('SMS failed: ', '');
+        }
 
         // Update recipient status with error
         await MessageRecipientModel.updateStatus(
           recipientRecord.id,
           'failed',
-          error.message
+          errorMessage
         );
 
         errors.push({
           phone: recipient.phone,
           name: recipient.name,
           status: 'failed',
-          error: error.message
+          error: errorMessage
         });
       }
     }
