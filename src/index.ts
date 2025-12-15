@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import authRoutes from './routes/auth';
 import { createTables, runMigrations } from './database/migrations';
+import { testConnection } from './database/connection';
 
 dotenv.config();
 
@@ -55,12 +56,22 @@ const startServer = async () => {
     
     // Test database connection first
     console.log('Testing database connection...');
-    await createTables();
-    console.log('Database tables created successfully');
     
-    console.log('Running database migrations...');
-    await runMigrations();
-    console.log('Database migrations completed successfully');
+    try {
+      const connectionType = await testConnection();
+      console.log(`Using ${connectionType} connection`);
+      
+      await createTables();
+      console.log('Database tables created successfully');
+      
+      console.log('Running database migrations...');
+      await runMigrations();
+      console.log('Database migrations completed successfully');
+    } catch (error) {
+      console.warn('⚠️  Database connection failed, starting server without database');
+      console.warn('This is OK for testing API endpoints that don\'t require database');
+      console.warn('Database error:', error instanceof Error ? error.message : String(error));
+    }
     
     app.listen(port, () => {
       console.log(`✅ Server running successfully on port ${port}`);

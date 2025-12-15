@@ -8,6 +8,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const migrations_1 = require("./database/migrations");
+const connection_1 = require("./database/connection");
 dotenv_1.default.config();
 // Validate required environment variables
 const requiredEnvVars = ['JWT_SECRET'];
@@ -48,11 +49,20 @@ const startServer = async () => {
         console.log('Starting server initialization...');
         // Test database connection first
         console.log('Testing database connection...');
-        await (0, migrations_1.createTables)();
-        console.log('Database tables created successfully');
-        console.log('Running database migrations...');
-        await (0, migrations_1.runMigrations)();
-        console.log('Database migrations completed successfully');
+        try {
+            const connectionType = await (0, connection_1.testConnection)();
+            console.log(`Using ${connectionType} connection`);
+            await (0, migrations_1.createTables)();
+            console.log('Database tables created successfully');
+            console.log('Running database migrations...');
+            await (0, migrations_1.runMigrations)();
+            console.log('Database migrations completed successfully');
+        }
+        catch (error) {
+            console.warn('⚠️  Database connection failed, starting server without database');
+            console.warn('This is OK for testing API endpoints that don\'t require database');
+            console.warn('Database error:', error instanceof Error ? error.message : String(error));
+        }
         app.listen(port, () => {
             console.log(`✅ Server running successfully on port ${port}`);
             console.log(`🌐 API available at: http://localhost:${port}`);
