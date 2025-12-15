@@ -70,7 +70,7 @@ const startServer = async () => {
     console.error('❌ Failed to start server:', error);
     
     // Provide helpful error messages
-    if (error.code === 'ENETUNREACH') {
+    if (error instanceof Error && 'code' in error && error.code === 'ENETUNREACH') {
       console.error('🔍 Database connection failed - check your DATABASE_URL');
       console.error('💡 Make sure your Supabase database is running and accessible');
     }
