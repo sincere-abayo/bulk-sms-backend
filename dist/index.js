@@ -9,11 +9,29 @@ const cors_1 = __importDefault(require("cors"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const migrations_1 = require("./database/migrations");
 dotenv_1.default.config();
+// Validate required environment variables
+const requiredEnvVars = ['JWT_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+    console.error('Missing required environment variables:', missingEnvVars);
+    console.error('Please check your environment configuration');
+}
+// Log environment info (without sensitive data)
+console.log('Environment:', process.env.NODE_ENV || 'development');
+console.log('Database URL configured:', !!process.env.DATABASE_URL);
+console.log('JWT Secret configured:', !!process.env.JWT_SECRET);
 const app = (0, express_1.default)();
 const port = process.env.PORT || 4000;
-// Middleware
+// CORS configuration with environment variables
+const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:3000',
+    process.env.MOBILE_APP_URL || 'http://localhost:8081',
+    'http://localhost:3000', // Always allow localhost for development
+    'http://localhost:8081'
+].filter(Boolean);
+console.log('CORS allowed origins:', allowedOrigins);
 app.use((0, cors_1.default)({
-    origin: true, // Allow all origins in development
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -27,14 +45,26 @@ app.use('/api/auth', auth_1.default);
 // Initialize database and start server
 const startServer = async () => {
     try {
+        console.log('Starting server initialization...');
+        // Test database connection first
+        console.log('Testing database connection...');
         await (0, migrations_1.createTables)();
+        console.log('Database tables created successfully');
+        console.log('Running database migrations...');
         await (0, migrations_1.runMigrations)();
+        console.log('Database migrations completed successfully');
         app.listen(port, () => {
-            console.log(`Server running on port ${port}`);
+            console.log(`✅ Server running successfully on port ${port}`);
+            console.log(`🌐 API available at: http://localhost:${port}`);
         });
     }
     catch (error) {
-        console.error('Failed to start server:', error);
+        console.error('❌ Failed to start server:', error);
+        // Provide helpful error messages
+        if (error instanceof Error && 'code' in error && error.code === 'ENETUNREACH') {
+            console.error('🔍 Database connection failed - check your DATABASE_URL');
+            console.error('💡 Make sure your Supabase database is running and accessible');
+        }
         process.exit(1);
     }
 };
