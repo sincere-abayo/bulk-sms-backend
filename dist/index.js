@@ -9,6 +9,7 @@ const cors_1 = __importDefault(require("cors"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const migrations_1 = require("./database/migrations");
 const connection_1 = require("./database/connection");
+const supabase_migrations_1 = require("./database/supabase-migrations");
 dotenv_1.default.config();
 // Validate required environment variables
 const requiredEnvVars = ['JWT_SECRET'];
@@ -52,11 +53,25 @@ const startServer = async () => {
         try {
             const connectionType = await (0, connection_1.testConnection)();
             console.log(`Using ${connectionType} connection`);
-            await (0, migrations_1.createTables)();
-            console.log('Database tables created successfully');
-            console.log('Running database migrations...');
-            await (0, migrations_1.runMigrations)();
-            console.log('Database migrations completed successfully');
+            if (connectionType === 'postgresql') {
+                // Use PostgreSQL migrations
+                await (0, migrations_1.createTables)();
+                console.log('Database tables created successfully');
+                console.log('Running database migrations...');
+                await (0, migrations_1.runMigrations)();
+                console.log('Database migrations completed successfully');
+            }
+            else if (connectionType === 'supabase') {
+                // Use Supabase REST API migrations
+                console.log('Setting up database via Supabase REST API...');
+                const supabaseSuccess = await (0, supabase_migrations_1.createSupabaseTables)();
+                if (supabaseSuccess) {
+                    console.log('✅ Database setup completed via Supabase');
+                }
+                else {
+                    console.log('⚠️  Supabase setup had issues, but server will continue');
+                }
+            }
         }
         catch (error) {
             console.warn('⚠️  Database connection failed, starting server without database');

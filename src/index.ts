@@ -4,6 +4,7 @@ import cors from 'cors';
 import authRoutes from './routes/auth';
 import { createTables, runMigrations } from './database/migrations';
 import { testConnection } from './database/connection';
+import { createSupabaseTables } from './database/supabase-migrations';
 
 dotenv.config();
 
@@ -61,12 +62,24 @@ const startServer = async () => {
       const connectionType = await testConnection();
       console.log(`Using ${connectionType} connection`);
       
-      await createTables();
-      console.log('Database tables created successfully');
-      
-      console.log('Running database migrations...');
-      await runMigrations();
-      console.log('Database migrations completed successfully');
+      if (connectionType === 'postgresql') {
+        // Use PostgreSQL migrations
+        await createTables();
+        console.log('Database tables created successfully');
+        
+        console.log('Running database migrations...');
+        await runMigrations();
+        console.log('Database migrations completed successfully');
+      } else if (connectionType === 'supabase') {
+        // Use Supabase REST API migrations
+        console.log('Setting up database via Supabase REST API...');
+        const supabaseSuccess = await createSupabaseTables();
+        if (supabaseSuccess) {
+          console.log('✅ Database setup completed via Supabase');
+        } else {
+          console.log('⚠️  Supabase setup had issues, but server will continue');
+        }
+      }
     } catch (error) {
       console.warn('⚠️  Database connection failed, starting server without database');
       console.warn('This is OK for testing API endpoints that don\'t require database');
