@@ -47,3 +47,4 @@ npm run dev
 The app uses Africa's Talking for SMS delivery. OTP codes are sent via SMS to user phones. In development, OTPs are also logged to console for testing.
 
 %iT6gMZX&5/R?&$
+Perfect! Let me guide you through hosting your backend on Render and database on Supabase. This is an excellent choice for production deployment.
