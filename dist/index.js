@@ -24,21 +24,59 @@ console.log('Database URL configured:', !!process.env.DATABASE_URL);
 console.log('JWT Secret configured:', !!process.env.JWT_SECRET);
 const app = (0, express_1.default)();
 const port = process.env.PORT || 4000;
-// CORS configuration with environment variables
+// CORS configuration - Mobile-friendly setup
 const allowedOrigins = [
     process.env.FRONTEND_URL || 'http://localhost:3000',
-    process.env.MOBILE_APP_URL || 'http://localhost:8081',
-    'http://localhost:3000', // Always allow localhost for development
-    'http://localhost:8081'
-].filter(Boolean);
-console.log('CORS allowed origins:', allowedOrigins);
+    'http://localhost:3000', // Admin dashboard development
+    'https://your-admin-dashboard.vercel.app', // Admin dashboard production
+];
+// CORS configuration that works with mobile apps
 app.use((0, cors_1.default)({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, Postman, etc.)
+        if (!origin)
+            return callback(null, true);
+        // Allow specific web origins
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        // Allow any localhost origin (development)
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            return callback(null, true);
+        }
+        // Allow Expo development URLs (exp://, http://192.168.x.x)
+        if (origin.startsWith('exp://') || origin.match(/^https?:\/\/192\.168\.\d+\.\d+/)) {
+            return callback(null, true);
+        }
+        // Allow deployed admin dashboard
+        if (origin.includes('vercel.app') || origin.includes('netlify.app')) {
+            return callback(null, true);
+        }
+        // For production, you might want to be more restrictive
+        // For now, allow all origins to ensure mobile apps work
+        return callback(null, true);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
+console.log('CORS configured for mobile and web access');
 app.use(express_1.default.json());
+// Additional headers for mobile app compatibility
+app.use((req, res, next) => {
+    // Allow mobile apps to access the API
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.sendStatus(200);
+    }
+    else {
+        next();
+    }
+});
 // Routes
 app.get('/', (req, res) => {
     res.send('Bulk SMS App Backend API');
